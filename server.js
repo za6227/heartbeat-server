@@ -3,9 +3,9 @@ const app = express();
 app.use(express.json());
 
 const activeSessions = new Map();
-const TIMEOUT_MS = 60 * 1000; // ตัดเป็น Offline ถ้าไม่มีสัญญาณเกิน 60 วินาที
+const TIMEOUT_MS = 60 * 1000;
 
-// หน้า Dashboard สวยๆ ทันสมัย
+// หน้าเว็บแดชบอร์ดตกแต่งแบบ Cyberpunk / Glassmorphism
 app.get("/", (req, res) => {
     res.send(`
     <!DOCTYPE html>
@@ -54,7 +54,6 @@ app.get("/", (req, res) => {
             }
             @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.85); } }
 
-            /* Stat Cards */
             .stats-grid {
                 display: grid;
                 grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
@@ -70,18 +69,13 @@ app.get("/", (req, res) => {
                 position: relative;
                 overflow: hidden;
             }
-            .stat-card::before {
-                content: '';
-                position: absolute;
-                top: 0; left: 0; width: 4px; height: 100%;
-            }
+            .stat-card::before { content: ''; position: absolute; top: 0; left: 0; width: 4px; height: 100%; }
             .stat-card.blue::before { background: #38bdf8; }
             .stat-card.green::before { background: #22c55e; }
             .stat-card.purple::before { background: #a855f7; }
             .stat-label { font-size: 13px; color: #94a3b8; font-weight: 500; }
             .stat-value { font-size: 38px; font-weight: 700; margin-top: 8px; color: #fff; }
 
-            /* Table Card */
             .table-card {
                 background: rgba(30, 41, 59, 0.6);
                 backdrop-filter: blur(12px);
@@ -105,14 +99,7 @@ app.get("/", (req, res) => {
             }
             tr:hover td { background: rgba(255, 255, 255, 0.02); }
             
-            /* Badges */
-            .badge {
-                display: inline-block;
-                padding: 4px 10px;
-                border-radius: 6px;
-                font-size: 12px;
-                font-weight: 600;
-            }
+            .badge { display: inline-block; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; }
             .badge-delta { background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); }
             .badge-mobile { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
             .badge-pc { background: rgba(148, 163, 184, 0.15); color: #cbd5e1; }
@@ -211,7 +198,6 @@ app.get("/", (req, res) => {
                 } catch(e) {}
             }
 
-            // ตรวจสอบข้อมูลสดทุกๆ 2 วินาที
             setInterval(fetchStats, 2000);
             fetchStats();
         </script>
@@ -220,7 +206,6 @@ app.get("/", (req, res) => {
     `);
 });
 
-// Endpoint รับข้อมูลจาก Roblox
 app.post("/api/heartbeat", (req, res) => {
     const { sessionId, userId, username, device, executor, isDelta } = req.body;
     if (!sessionId) return res.status(400).json({ error: "Missing sessionId" });
@@ -237,6 +222,30 @@ app.post("/api/heartbeat", (req, res) => {
     res.json({ status: "alive" });
 });
 
-// Endpoint ส่งข้อมูล JSON
 app.get("/api/online", (req, res) => {
-    const now = Date.now
+    const now = Date.now();
+    const onlineList = [];
+
+    for (const [id, data] of activeSessions.entries()) {
+        if (now - data.lastSeen > TIMEOUT_MS) {
+            activeSessions.delete(id);
+        } else {
+            onlineList.push({
+                sessionId: id,
+                username: data.username,
+                userId: data.userId,
+                device: data.device,
+                executor: data.executor,
+                isDelta: data.isDelta,
+                activeForSeconds: Math.floor((now - data.lastSeen) / 1000)
+            });
+        }
+    }
+
+    res.json({ totalOnline: onlineList.length, users: onlineList });
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+});
