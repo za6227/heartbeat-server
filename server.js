@@ -1,5 +1,13 @@
 const express = require('express');
 const axios = require('axios');
+const cors = require('cors'); // <--- เพิ่มบรรทัดนี้
+
+const app = express();
+
+app.use(cors()); // <--- เพิ่มบรรทัดนี้ เพื่อให้เว็บแดชบอร์ดดึงข้อมูลได้ไม่ติดบล็อก
+app.use(express.json());
+const express = require('express');
+const axios = require('axios');
 const app = express();
 
 app.use(express.json());
