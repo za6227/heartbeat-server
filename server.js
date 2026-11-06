@@ -1,65 +1,60 @@
--- ==================== [ ระบบ Heartbeat ตรวจจับผู้ใช้ ] ====================
-local HttpService = game:GetService("HttpService")
-local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
-local player = Players.LocalPlayer or Players.PlayerAdded:Wait()
+const express = require('express');
+const axios = require('axios');
+const app = express();
 
--- ใส่ URL เซิร์ฟเวอร์ของคุณเดิม (ไม่ต้องใส่ Discord Webhook)
-local SERVER_URL = "https://heartbeat-server-h5r4..." -- ใส่โดเมนเซิร์ฟเวอร์ของคุณ
-local INTERVAL = 30 -- ส่งสัญญาณทุก 30 วินาที
+app.use(express.json());
 
--- เช็คอุปกรณ์
-local function getDevice()
-    if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then
-        return "Mobile"
-    elseif UserInputService.GamepadEnabled and not UserInputService.KeyboardEnabled then
-        return "Console"
-    else
-        return "PC"
-    end
-end
+// วาง Webhook URL ใหม่ของคุณที่สร้างไว้ใน Discord ตรงนี้ (จะไม่มีใครเห็นจากภายนอก)
+const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL || "ใส่_WEBHOOK_URL_ใหม่ตรงนี้";
 
--- เช็คตัวรัน
-local function getExecutor()
-    local identify = identifyexecutor or getexecutorname
-    if identify then
-        return tostring(identify())
-    end
-    return "Unknown"
-end
+// ตัวแปรจำไว้ว่าใครเคยส่งแจ้งเตือนเข้า Discord แล้วบ้าง เพื่อไม่ให้สแปมข้อความซ้ำ
+const activeSessions = new Set();
 
--- ฟังก์ชันรันลูปส่งสัญญาณไปที่เซิร์ฟเวอร์
-task.spawn(function()
-    local make_request = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
-    if not make_request then return end
+// -------------------------------------------------------------
+// Endpoint 1: สำหรับรับ Heartbeat (ส่งทุก 30 วิ ตามระบบเดิมของคุณ)
+// -------------------------------------------------------------
+app.post('/heartbeat', async (req, res) => {
+    try {
+        const { username, userId, executor, device, placeId, ping, fps } = req.body;
 
-    while true do
-        pcall(function()
-            local ping = math.floor(player:GetNetworkPing() * 1000)
-            local fps = math.floor(1 / RunService.RenderStepped:Wait())
+        // ถ้ายังไม่เคยส่งการ์ดแจ้งเตือนสำหรับผู้ใช้คนนี้ ให้ส่งเข้า Discord 1 ครั้ง
+        if (userId && !activeSessions.has(userId)) {
+            activeSessions.add(userId);
 
-            local payload = {
-                username = string.format("%s (@%s)", player.DisplayName, player.Name),
-                userId = tostring(player.UserId),
-                device = getDevice(),
-                executor = getExecutor(),
-                placeId = tostring(game.PlaceId),
-                ping = ping,
-                fps = fps
-            }
+            // ส่งข้อมูลแจ้งเตือนเข้า Discord Webhook
+            await axios.post(DISCORD_WEBHOOK_URL, {
+                embeds: [
+                    {
+                        title: "🚀 มีผู้ใช้งานเปิดสคริปต์!",
+                        color: 3447003,
+                        fields: [
+                            { name: "👤 ผู้เล่น", value: `${username} (ID: ${userId})`, inline: true },
+                            { name: "📱 อุปกรณ์", value: `${device || 'Unknown'}`, inline: true },
+                            { name: "⚙️ ตัวรัน", value: `${executor || 'Unknown'}`, inline: true },
+                            { name: "🗺️ Place ID", value: `${placeId || 'Unknown'}`, inline: true },
+                            { name: "📊 ประสิทธิภาพ", value: `Ping: ${ping || 0}ms | FPS: ${fps || 0}`, inline: true }
+                        ],
+                        footer: { text: "Fast-Hub Logger System" },
+                        timestamp: new Date().toISOString()
+                    }
+                ]
+            }).catch(err => console.error("Discord send failed:", err.message));
+        }
 
-            make_request({
-                Url = SERVER_URL .. "/heartbeat",
-                Method = "POST",
-                Headers = {
-                    ["Content-Type"] = "application/json"
-                },
-                Body = HttpService:JSONEncode(payload)
-            })
-        end)
+        // ตอบกลับสคริปต์ว่าได้รับสัญญาณเรียบร้อย
+        res.status(200).json({ status: "alive" });
+    } catch (error) {
+        console.error("Error processing heartbeat:", error);
+        res.status(500).json({ error: "Internal Server Error" });
+    }
+});
 
-        task.wait(INTERVAL)
-    end
-end)
--- =========================================================================
+// เคลียร์ประวัติผู้ใช้ทุก 10 นาที เพื่อให้สามารถตรวจจับการเปิดใหม่ได้ในรอบถัดไป
+setInterval(() => {
+    activeSessions.clear();
+}, 10 * 60 * 1000);
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+});
