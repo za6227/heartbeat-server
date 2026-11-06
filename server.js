@@ -1,117 +1,59 @@
 const express = require('express');
-const axios = require('axios');
-const cors = require('cors'); // <--- เพิ่มบรรทัดนี้
+const cors = require('cors');
 
 const app = express();
+const PORT = process.env.PORT || 3000;
 
-app.use(cors()); // <--- เพิ่มบรรทัดนี้ เพื่อให้เว็บแดชบอร์ดดึงข้อมูลได้ไม่ติดบล็อก
-app.use(express.json());
-const express = require('express');
-const axios = require('axios');
-const app = express();
-
+// เปิด CORS เพื่อให้ GitHub Pages ดึงข้อมูลข้ามโดเมนได้
+app.use(cors({ origin: '*' }));
 app.use(express.json());
 
-const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL || "https://discord.com/api/webhooks/1568136540549415005/f_LPZmmv_rM8TNxh_3oY9GWOLemfxYDzhrZqR01iNTfjnPav7ZjOahk_0mS1s10VPE31";
-
-// เก็บข้อมูลผู้เล่นทั้งหมดที่ออนไลน์: userId -> { username, device, executor, placeId, ping, fps, lastSeen }
+// เก็บรายชื่อผู้ใช้งานที่กำลังออนไลน์ (userId -> data)
 const activeUsers = new Map();
-const activeSessions = new Set(); // ป้องกันการ์ดเด้งซ้ำคนเดิมทุก 30 วินาที
 
-// ฟังก์ชันดึงรายชื่อและเคลียร์คนที่หลุดเกิน 60 วินาที
-function getActiveUsersList() {
-    const now = Date.now();
-    const onlineList = [];
+// 1. API รับสัญญาณ Heartbeat จากในเกม (fAst_Script.lua)
+app.post('/api/heartbeat', (req, res) => {
+    const { username, userId, device, executor, placeId, ping, fps } = req.body;
 
-    for (const [id, user] of activeUsers.entries()) {
-        if (now - user.lastSeen <= 60 * 1000) {
-            onlineList.push(user);
-        } else {
-            activeUsers.delete(id); // หลุดการเชื่อมต่อเกิน 1 นาที ลบออกจากระบบ
-        }
+    if (!userId) {
+        return res.status(400).json({ error: "Missing userId" });
     }
-    return onlineList;
-}
 
-app.post('/api/heartbeat', async (req, res) => {
-    try {
-        const { username, userId, device, executor, placeId, ping, fps } = req.body;
-
-        if (userId) {
-            // บันทึก/อัปเดตข้อมูลผู้เล่นล่าสุด
-            activeUsers.set(userId, {
-                username: username || 'Unknown',
-                userId: userId,
-                device: device || 'Unknown',
-                executor: executor || 'Unknown',
-                placeId: placeId || 'Unknown',
-                ping: ping || 0,
-                fps: fps || 0,
-                lastSeen: Date.now()
-            });
-
-            // ส่งแจ้งเตือนเข้า Discord เฉพาะตอนผู้เล่นเปิดสคริปต์ครั้งแรก
-            if (!activeSessions.has(userId)) {
-                activeSessions.add(userId);
-
-                const currentOnlineUsers = getActiveUsersList();
-
-                // สร้างข้อความสรุปรายชื่อผู้เล่นที่กำลังออนไลน์อยู่ทั้งหมด
-                let onlineSummaryText = currentOnlineUsers.map((u, index) => {
-                    return `${index + 1}. **${u.username}** | 📱 ${u.device} | ⚙️ ${u.executor}`;
-                }).join('\n');
-
-                // ป้องกันข้อความยาวเกินลิมิตของ Discord (1024 ตัวอักษรต่อ Field)
-                if (onlineSummaryText.length > 1000) {
-                    onlineSummaryText = onlineSummaryText.substring(0, 997) + '...';
-                }
-
-                await axios.post(DISCORD_WEBHOOK_URL, {
-                    embeds: [
-                        {
-                            title: "🚀 fAst Hub - มีผู้ใช้งานเปิดสคริปต์!",
-                            color: 3447003,
-                            fields: [
-                                { name: "👤 ผู้เล่นที่เพิ่งเปิด", value: `${username} (ID: ${userId})`, inline: true },
-                                { name: "📱 อุปกรณ์", value: `${device || 'Unknown'}`, inline: true },
-                                { name: "⚙️ ตัวรัน", value: `${executor || 'Unknown'}`, inline: true },
-                                { name: "🗺️ Place ID", value: `${placeId || 'Unknown'}`, inline: true },
-                                { name: "📊 ประสิทธิภาพ", value: `Ping: ${ping || 0}ms | FPS: ${fps || 0}`, inline: true },
-                                { name: "🟢 จำนวนออนไลน์รวม", value: `**${currentOnlineUsers.length} คน**`, inline: true },
-                                { name: "📋 รายชื่อผู้ใช้ที่กำลังออนไลน์อยู่ทั้งหมด", value: onlineSummaryText || "ไม่มีข้อมูล", inline: false }
-                            ],
-                            footer: { text: "fAst Hub Logger System" },
-                            timestamp: new Date().toISOString()
-                        }
-                    ]
-                }).catch(err => console.error("Discord send failed:", err.message));
-            }
-        }
-
-        res.status(200).json({ status: "alive", totalOnline: activeUsers.size });
-    } catch (error) {
-        console.error("Error processing heartbeat:", error);
-        res.status(500).json({ error: "Internal Server Error" });
-    }
-});
-
-// ล้างประวัติการแจ้งเตือนคนเดิมทุก 15 นาที
-setInterval(() => {
-    activeSessions.clear();
-}, 15 * 60 * 1000);
-
-const PORT = process.env.PORT || 3000;
-// Endpoint สำหรับส่งข้อมูลผู้เล่นออนไลน์ทั้งหมดให้หน้าเว็บแดชบอร์ด
-app.get('/api/users', (req, res) => {
-    const onlineList = getActiveUsersList();
-    res.status(200).json({
-        total: onlineList.length,
-        users: onlineList
+    activeUsers.set(String(userId), {
+        userId: String(userId),
+        username: username || "Unknown",
+        device: device || "PC",
+        executor: executor || "Unknown",
+        placeId: String(placeId || ""),
+        ping: Number(ping) || 0,
+        fps: Number(fps) || 0,
+        lastSeen: Date.now()
     });
+
+    return res.json({ status: "ok" });
 });
 
-// บรรทัดนี้เดิมที่มีอยู่แล้วต้องอยู่ล่างสุดเสมอ
-const PORT = process.env.PORT || 3000;
+// 2. API ส่งข้อมูลผู้ใช้ที่ออนไลน์ให้เว็บแดชบอร์ด (GET /api/users)
+app.get('/api/users', (req, res) => {
+    const now = Date.now();
+    const TIMEOUT_MS = 60 * 1000; // หากไม่ส่งสัญญาณมาเกิน 60 วินาที ให้ถือว่าออกจากเกมแล้ว
+
+    // คัดกรองและลบผู้ใช้ที่ออฟไลน์
+    for (const [id, user] of activeUsers.entries()) {
+        if (now - user.lastSeen > TIMEOUT_MS) {
+            activeUsers.delete(id);
+        }
+    }
+
+    const usersList = Array.from(activeUsers.values()).sort((a, b) => b.lastSeen - a.lastSeen);
+    return res.json(usersList);
+});
+
+// หน้าแรกสำหรับตรวจสอบสถานะ
+app.get('/', (req, res) => {
+    res.send("fAst Hub Heartbeat Server is Online!");
+});
+
 app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+    console.log(`Server running on port ${PORT}`);
 });
