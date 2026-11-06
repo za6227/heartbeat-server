@@ -1,102 +1,65 @@
+-- ==================== [ ระบบ Heartbeat ตรวจจับผู้ใช้ ] ====================
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
-local RbxAnalyticsService = game:GetService("RbxAnalyticsService")
+local RunService = game:GetService("RunService")
+local player = Players.LocalPlayer or Players.PlayerAdded:Wait()
 
-local localPlayer = Players.LocalPlayer
-local SERVER_URL = "https://heartbeat-server-h5r4.onrender.com/api/heartbeat"
+-- ใส่ URL เซิร์ฟเวอร์ของคุณเดิม (ไม่ต้องใส่ Discord Webhook)
+local SERVER_URL = "https://heartbeat-server-h5r4..." -- ใส่โดเมนเซิร์ฟเวอร์ของคุณ
+local INTERVAL = 30 -- ส่งสัญญาณทุก 30 วินาที
 
--- สร้าง Session ID เฉพาะสำหรับเครื่อง/เซสชันนี้
-local function getSessionId()
-    local success, clientId = pcall(function()
-        return RbxAnalyticsService:GetClientId()
-    end)
-    if success and clientId and clientId ~= "" then
-        return clientId
-    end
-    return tostring(localPlayer.UserId) .. "_" .. tostring(os.time())
-end
-
-local mySessionId = getSessionId()
-
--- ตรวจสอบชื่อตัวรันและตรวจว่าเป็น Delta หรือไม่
-local function getExecutorDetails()
-    local name = "Unknown"
-    
-    if identifyexecutor then
-        local res = identifyexecutor()
-        name = tostring(res or "Unknown")
-    elseif getexecutorname then
-        local res = getexecutorname()
-        name = tostring(res or "Unknown")
-    end
-
-    -- ตรวจสอบว่าใช่ Delta หรือไม่ (เช็กจากชื่อ หรือตัวแปรเฉพาะของ Delta)
-    local isDelta = false
-    local lowerName = string.lower(name)
-    if string.find(lowerName, "delta") or DELTA ~= nil or delta ~= nil then
-        isDelta = true
-        name = "Delta"
-    end
-
-    return name, isDelta
-end
-
--- ตรวจสอบประเภทอุปกรณ์ (Mobile / PC)
-local function getDeviceType()
+-- เช็คอุปกรณ์
+local function getDevice()
     if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then
         return "Mobile"
-    elseif UserInputService.KeyboardEnabled and UserInputService.MouseEnabled then
-        return "PC"
-    elseif UserInputService.GamepadEnabled then
+    elseif UserInputService.GamepadEnabled and not UserInputService.KeyboardEnabled then
         return "Console"
     else
-        return "Other"
+        return "PC"
     end
 end
 
--- ฟังก์ชันส่ง HTTP Request ที่รองรับฟังก์ชันของตัวรันทุกค่าย
-local function sendRequest(url, data)
-    local requestFunc = (syn and syn.request) or (http and http.request) or http_request or request
-    if not requestFunc then
-        return false
+-- เช็คตัวรัน
+local function getExecutor()
+    local identify = identifyexecutor or getexecutorname
+    if identify then
+        return tostring(identify())
     end
-
-    local payload = HttpService:JSONEncode(data)
-    pcall(function()
-        requestFunc({
-            Url = url,
-            Method = "POST",
-            Headers = {
-                ["Content-Type"] = "application/json"
-            },
-            Body = payload
-        })
-    end)
+    return "Unknown"
 end
 
--- ฟังก์ชันยิงข้อมูล Heartbeat เข้า server.js
-local function sendHeartbeat()
-    local execName, isDelta = getExecutorDetails()
-    
-    local payload = {
-        sessionId = mySessionId,
-        userId = tostring(localPlayer.UserId),
-        username = localPlayer.Name,
-        device = getDeviceType(),
-        executor = execName,
-        isDelta = isDelta
-    }
-    
-    task.spawn(function()
-        sendRequest(SERVER_URL, payload)
-    end)
-end
-
--- เริ่มต้นส่งทันที และวนลูปส่งซ้ำทุกๆ 20 วินาที
-sendHeartbeat()
+-- ฟังก์ชันรันลูปส่งสัญญาณไปที่เซิร์ฟเวอร์
 task.spawn(function()
-    while task.wait(20) do
-        sendHeartbeat()
+    local make_request = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
+    if not make_request then return end
+
+    while true do
+        pcall(function()
+            local ping = math.floor(player:GetNetworkPing() * 1000)
+            local fps = math.floor(1 / RunService.RenderStepped:Wait())
+
+            local payload = {
+                username = string.format("%s (@%s)", player.DisplayName, player.Name),
+                userId = tostring(player.UserId),
+                device = getDevice(),
+                executor = getExecutor(),
+                placeId = tostring(game.PlaceId),
+                ping = ping,
+                fps = fps
+            }
+
+            make_request({
+                Url = SERVER_URL .. "/heartbeat",
+                Method = "POST",
+                Headers = {
+                    ["Content-Type"] = "application/json"
+                },
+                Body = HttpService:JSONEncode(payload)
+            })
+        end)
+
+        task.wait(INTERVAL)
     end
 end)
+-- =========================================================================
