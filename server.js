@@ -5,7 +5,7 @@ const app = express();
 app.use(express.json());
 
 // วาง Webhook URL ใหม่ของคุณที่สร้างไว้ใน Discord ตรงนี้ (จะไม่มีใครเห็นจากภายนอก)
-const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL || "ใส่_WEBHOOK_URL_ใหม่ตรงนี้";
+const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL || "https://discord.com/api/webhooks/1568136540549415005/f_LPZmmv_rM8TNxh_3oY9GWOLemfxYDzhrZqR01iNTfjnPav7ZjOahk_0mS1s10VPE31";
 
 // ตัวแปรจำไว้ว่าใครเคยส่งแจ้งเตือนเข้า Discord แล้วบ้าง เพื่อไม่ให้สแปมข้อความซ้ำ
 const activeSessions = new Set();
