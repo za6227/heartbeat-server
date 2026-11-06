@@ -93,6 +93,17 @@ setInterval(() => {
 }, 15 * 60 * 1000);
 
 const PORT = process.env.PORT || 3000;
+// Endpoint สำหรับส่งข้อมูลผู้เล่นออนไลน์ทั้งหมดให้หน้าเว็บแดชบอร์ด
+app.get('/api/users', (req, res) => {
+    const onlineList = getActiveUsersList();
+    res.status(200).json({
+        total: onlineList.length,
+        users: onlineList
+    });
+});
+
+// บรรทัดนี้เดิมที่มีอยู่แล้วต้องอยู่ล่างสุดเสมอ
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
